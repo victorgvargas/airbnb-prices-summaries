@@ -1,16 +1,22 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 
-async function scrapeAirbnb(city, guests = 2) {
-    // Calculate next month dates dynamically
+async function scrapeAirbnb(city, targetMonth, guests = 2) {
+    // Calculate target month dates dynamically
     const today = new Date();
-    const firstDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1); // First day of next month
-    const lastDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0); // Last day of next month
+    const currentYear = today.getFullYear();
+
+    // Determine the year for the target month
+    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+
+    // Create first and last day of target month
+    const firstDayOfTargetMonth = new Date(targetYear, targetMonth - 1, 1); // month is 0-indexed
+    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0); // day 0 = last day of previous month
 
     // Format dates properly to avoid timezone issues
-    const checkinDateString = `${firstDayOfNextMonth.getFullYear()}-${String(firstDayOfNextMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfNextMonth.getDate()).padStart(2, '0')}`;
-    const checkoutDateString = `${lastDayOfNextMonth.getFullYear()}-${String(lastDayOfNextMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfNextMonth.getDate()).padStart(2, '0')}`;
-    const daysInMonth = lastDayOfNextMonth.getDate();
+    const checkinDateString = `${firstDayOfTargetMonth.getFullYear()}-${String(firstDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfTargetMonth.getDate()).padStart(2, '0')}`;
+    const checkoutDateString = `${lastDayOfTargetMonth.getFullYear()}-${String(lastDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfTargetMonth.getDate()).padStart(2, '0')}`;
+    const daysInMonth = lastDayOfTargetMonth.getDate();
 
     console.log(`Using dates: ${checkinDateString} to ${checkoutDateString} (${daysInMonth} days)`);
 
@@ -533,20 +539,23 @@ async function scrapeAirbnb(city, guests = 2) {
 }
 
 // Function to scrape multiple cities and calculate averages
-async function scrapeMultipleCities(cities, guests = 2) {
+async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
     const results = [];
 
-    // Calculate next month info for consistent reporting
+    // Calculate target month info for consistent reporting
     const today = new Date();
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const lastDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    const daysInNextMonth = lastDayOfNextMonth.getDate();
-    const monthName = nextMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const currentYear = today.getFullYear();
+    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+
+    const targetDate = new Date(targetYear, targetMonth - 1, 1);
+    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0);
+    const daysInTargetMonth = lastDayOfTargetMonth.getDate();
+    const monthName = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
     for (const city of cities) {
         console.log(`\n==== Processing ${city} ====`);
         try {
-            const listings = await scrapeAirbnb(city, guests);
+            const listings = await scrapeAirbnb(city, targetMonth, guests);
 
             if (listings.length > 0) {
                 const validPrices = listings
@@ -740,29 +749,95 @@ async function writeResultsToFile(results, filename = 'airbnb-price-analysis.jso
 function parseArgs() {
     const args = process.argv.slice(2);
 
-    if (args.length === 0) {
-        console.log('Usage: node src/index.js <city1> [city2] [city3] ...');
+    // Check for help flags
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log('Usage: node src/index.js <city1> [city2] [city3] ... [--month <1-12>]');
         console.log('Example: node src/index.js Paris Lisbon Helsinki');
-        console.log('Example: node src/index.js "New York" London Tokyo');
+        console.log('Example: node src/index.js "New York" London Tokyo --month 6');
+        console.log('Example: node src/index.js Barcelona --month 12');
+        console.log('');
+        console.log('Options:');
+        console.log('  --month <1-12>    Month to analyze (1=January, 12=December)');
+        console.log('                    Must be greater than current month');
+        console.log('                    Defaults to next month if not specified');
+        console.log('  --help, -h        Show this help message');
+        process.exit(0);
+    }
+
+    if (args.length === 0) {
+        console.log('Usage: node src/index.js <city1> [city2] [city3] ... [--month <1-12>]');
+        console.log('Example: node src/index.js Paris Lisbon Helsinki');
+        console.log('Example: node src/index.js "New York" London Tokyo --month 6');
+        console.log('Example: node src/index.js Barcelona --month 12');
+        console.log('');
+        console.log('Options:');
+        console.log('  --month <1-12>    Month to analyze (1=January, 12=December)');
+        console.log('                    Must be greater than current month');
+        console.log('                    Defaults to next month if not specified');
+        console.log('  --help, -h        Show this help message');
+        process.exit(0);
+    }
+
+    // Parse cities and month option
+    const cities = [];
+    let targetMonth = null;
+
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--month') {
+            if (i + 1 >= args.length) {
+                console.error('Error: --month option requires a value (1-12)');
+                process.exit(1);
+            }
+            const monthValue = parseInt(args[i + 1]);
+            if (isNaN(monthValue) || monthValue < 1 || monthValue > 12) {
+                console.error('Error: Month must be a number between 1 and 12');
+                process.exit(1);
+            }
+
+            const currentMonth = new Date().getMonth() + 1; // getMonth() is 0-indexed
+            if (monthValue <= currentMonth) {
+                console.error(`Error: Target month (${monthValue}) must be greater than current month (${currentMonth})`);
+                process.exit(1);
+            }
+
+            targetMonth = monthValue;
+            i++; // Skip the next argument (month value)
+        } else {
+            cities.push(args[i]);
+        }
+    }
+
+    if (cities.length === 0) {
+        console.error('Error: At least one city must be specified');
         process.exit(1);
     }
 
-    return args;
+    // Default to next month if not specified
+    if (targetMonth === null) {
+        const currentMonth = new Date().getMonth() + 1;
+        targetMonth = currentMonth === 12 ? 1 : currentMonth + 1;
+    }
+
+    return { cities, targetMonth };
 }
 
 // Main execution with command line arguments
 (async () => {
-    // Get cities from command line arguments
-    const cities = parseArgs();
+    // Get cities and target month from command line arguments
+    const { cities, targetMonth } = parseArgs();
     const guests = 1;
 
-    // Calculate next month info for reporting
+    // Calculate target month info for reporting
     const today = new Date();
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const monthName = nextMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
-    const daysInNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0).getDate();
+    const currentYear = today.getFullYear();
+    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
 
-    console.log(`Starting Airbnb price analysis for ${monthName} (${daysInNextMonth} days)...`);
+    const targetDate = new Date(targetYear, targetMonth - 1, 1);
+    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0);
+    const daysInTargetMonth = lastDayOfTargetMonth.getDate();
+    const monthName = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    console.log(`Starting Airbnb price analysis for ${monthName} (${daysInTargetMonth} days)...`);
     console.log('Cities to analyze:', cities.join(', '));
     console.log('\nNote: This tool analyzes short-term Airbnb rentals and provides:');
     console.log('- Actual Airbnb nightly rates for entire apartments');
@@ -771,7 +846,7 @@ function parseArgs() {
     console.log('- Both rates extracted from the same listing when displayed together\n');
 
     try {
-        const results = await scrapeMultipleCities(cities, guests);
+        const results = await scrapeMultipleCities(cities, targetMonth, guests);
 
         // Write results to file
         await writeResultsToFile(results);

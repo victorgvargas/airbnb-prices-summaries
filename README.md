@@ -22,19 +22,37 @@ npm install puppeteer
 ### Command Line Interface
 
 ```bash
-# Single city
+# Single city (defaults to next month)
 node src/index.js Paris
 
-# Multiple cities
+# Multiple cities (defaults to next month)
 node src/index.js Paris London Tokyo
 
 # Cities with spaces (use quotes)
 node src/index.js "New York" "Los Angeles" Barcelona
 
+# Specify a target month (1-12, must be greater than current month)
+node src/index.js Paris --month 6
+node src/index.js Barcelona Madrid --month 12
+node src/index.js "San Francisco" Seattle --month 4
+
 # More examples
 node src/index.js Madrid Rome Amsterdam
-node src/index.js "San Francisco" Seattle Portland
+node src/index.js "New York" --month 8
 ```
+
+### Month Parameter
+
+The `--month` option allows you to specify which month to analyze:
+- **Format**: `--month <1-12>` where 1=January, 12=December
+- **Restriction**: Month must be greater than the current month
+- **Default**: Next month if not specified
+- **Year Handling**: Automatically uses next year if needed
+
+**Examples:**
+- Current month is February → `--month 3` analyzes March 2026
+- Current month is November → `--month 12` analyzes December 2026
+- Current month is November → `--month 2` analyzes February 2027
 
 ### Output
 
@@ -45,6 +63,9 @@ The script generates two files:
 ### Sample Output
 
 ```
+Starting Airbnb price analysis for June 2026 (30 days)...
+Cities to analyze: Paris, London
+
 ==== RESULTS ====
 Paris:
   Nightly Rates:
@@ -66,11 +87,12 @@ Paris:
 ## Configuration
 
 The script analyzes:
-- **Date Range**: Next full month (March 2026 in current example)
+- **Date Range**: Full month specified by `--month` parameter (defaults to next month)
 - **Property Type**: Entire homes/apartments only
 - **Guest Count**: 1 guest (configurable in code)
 - **Listing Limit**: Top 10 listings per city
 - **Browser Mode**: Headless (faster execution)
+- **Year Handling**: Automatically determines correct year based on target month
 
 ## Technical Details
 
