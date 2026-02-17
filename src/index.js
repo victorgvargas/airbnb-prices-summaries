@@ -586,9 +586,10 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                     const lowerBoundary = Math.max(minPrice, q1 - 1.5 * iqr);
                     const upperBoundary = Math.min(maxPrice, q3 + 1.5 * iqr);
 
-                    // Calculate monthly price statistics if available
+                    // Calculate monthly price statistics
                     let monthlyStats = null;
                     if (validMonthlyPrices.length > 0) {
+                        // Use actual monthly prices when available
                         const averageMonthlyPrice = Math.round(validMonthlyPrices.reduce((sum, price) => sum + price, 0) / validMonthlyPrices.length);
                         const minMonthlyPrice = Math.min(...validMonthlyPrices);
                         const maxMonthlyPrice = Math.max(...validMonthlyPrices);
@@ -598,6 +599,19 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                             minMonthlyPrice,
                             maxMonthlyPrice,
                             monthlyListingsFound: validMonthlyPrices.length
+                        };
+                    } else if (validPrices.length > 0) {
+                        // Calculate monthly prices based on nightly prices (30-day average)
+                        const averageMonthlyPrice = Math.round(averagePrice * 30);
+                        const minMonthlyPrice = Math.round(minPrice * 30);
+                        const maxMonthlyPrice = Math.round(maxPrice * 30);
+
+                        monthlyStats = {
+                            averageMonthlyPrice,
+                            minMonthlyPrice,
+                            maxMonthlyPrice,
+                            monthlyListingsFound: 0, // Indicates calculated, not extracted
+                            calculatedFromNightly: true
                         };
                     }
 
@@ -877,7 +891,11 @@ function parseArgs() {
                     console.log(`  Monthly Rates:`);
                     console.log(`    Average: $${result.averageMonthlyPrice}/month`);
                     console.log(`    Range: $${result.minMonthlyPrice} - $${result.maxMonthlyPrice}/month`);
-                    console.log(`    Listings with monthly prices: ${result.monthlyListingsFound}`);
+                    if (result.calculatedFromNightly) {
+                        console.log(`    Source: Calculated from nightly rates (30-day estimate)`);
+                    } else {
+                        console.log(`    Listings with monthly prices: ${result.monthlyListingsFound}`);
+                    }
                 } else {
                     console.log(`  Monthly Rates: Not available`);
                 }
@@ -925,7 +943,16 @@ function parseArgs() {
                 );
                 console.log(`\n==== MONTHLY RATES SUMMARY ====`);
                 console.log(`Average across all cities with monthly data: $${overallMonthlyAverage}/month`);
-                console.log(`Cities with monthly pricing: ${monthlyResults.map(r => r.city).join(', ')}`);
+
+                const actualMonthlyResults = monthlyResults.filter(r => !r.calculatedFromNightly);
+                const calculatedMonthlyResults = monthlyResults.filter(r => r.calculatedFromNightly);
+
+                if (actualMonthlyResults.length > 0) {
+                    console.log(`Cities with actual monthly pricing: ${actualMonthlyResults.map(r => r.city).join(', ')}`);
+                }
+                if (calculatedMonthlyResults.length > 0) {
+                    console.log(`Cities with calculated monthly pricing: ${calculatedMonthlyResults.map(r => r.city).join(', ')}`);
+                }
             }
         }
 
