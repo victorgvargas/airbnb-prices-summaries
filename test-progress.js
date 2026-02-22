@@ -4,7 +4,7 @@ const { scrapeMultipleCities } = require('./src/index.js');
 async function testProgressDisplay() {
     console.log('Testing enhanced progress display...');
 
-    const cities = ['London', 'Paris'];
+    const cities = ['Bangkok'];
     const dateConfig = {
         mode: 'specific',
         checkin: '2026-03-15',

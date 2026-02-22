@@ -423,7 +423,7 @@ async function scrapeAirbnb(city, dateConfig, progressCallback = null) {
                         }
                     }
 
-                    // Enhanced price extraction - extract both nightly and monthly prices
+                    // Enhanced price extraction - handle both total and nightly prices correctly
                     let pricePerMonth = null;
 
                     // First extract monthly prices
@@ -455,61 +455,159 @@ async function scrapeAirbnb(city, dateConfig, progressCallback = null) {
                         }
                     }
 
-                    // Then extract nightly prices (avoiding monthly context)
-                    const pricePatterns = [
-                        // First priority: explicit nightly rates
-                        /€\s*(\d+(?:[.,]\d{3})*)\s*(?!.*mensal)/gi, // Euro without "mensal" (monthly)
-                        /R\$\s*(\d+(?:[.,]\d{3})*)\s*(?!.*mensal)/gi, // Brazilian Real without "mensal"
-                        /\$(\d+(?:[.,]\d{3})*)\s*(?!.*mensal)/gi, // US Dollar without "mensal"
+                    // Extract stay duration from the text and URL to help identify total vs nightly prices
+                    let stayNights = null;
 
-                        // Second priority: numbers followed by "per night" indicators
-                        /(\d+(?:[.,]\d{3})*)\s*(?:por\s*noite|\/\s*noite|per\s*night|\/\s*night)/gi,
+                    // First, try to extract from URL parameters if available
+                    const urlParams = window.location.search;
+                    const checkinMatch = urlParams.match(/checkin=(\d{4}-\d{2}-\d{2})/);
+                    const checkoutMatch = urlParams.match(/checkout=(\d{4}-\d{2}-\d{2})/);
 
-                        // Last resort: any reasonable price range numbers (avoiding monthly prices)
-                        /\b(\d{2,3})\b(?!.*(?:mensal|month|mes))/gi, // 2-3 digit numbers, avoid monthly context
-                    ];
+                    if (checkinMatch && checkoutMatch) {
+                        const checkinDate = new Date(checkinMatch[1]);
+                        const checkoutDate = new Date(checkoutMatch[1]);
+                        const timeDiff = checkoutDate.getTime() - checkinDate.getTime();
+                        const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                        if (daysDiff > 0 && daysDiff <= 31) {
+                            stayNights = daysDiff;
+                            debugInfo.push(`Extracted stay duration from URL for element ${index + 1}: ${stayNights} nights`);
+                        }
+                    }
 
-                    for (const pattern of pricePatterns) {
-                        const matches = allText.match(pattern);
-                        if (matches && matches.length > 0) {
-                            debugInfo.push(`Nightly pattern matched for element ${index + 1}: ${matches[0]}`);
+                    // If not found in URL, look for explicit night counts in text
+                    if (!stayNights) {
+                        const nightPatterns = [
+                            /por\s+(\d{1,2})\s+noites?/gi,
+                            /(\d{1,2})\s+nights?/gi,
+                            /(\d{1,2})\s+noites?/gi
+                        ];
 
-                            // Extract the numeric value
-                            const numericMatch = matches[0].match(/(\d+(?:[.,]\d{3})*)/);
-                            if (numericMatch) {
-                                let numericValue = parseInt(numericMatch[1].replace(/[.,]/g, ''));
-
-                                // Handle decimal places (if the last part is 2 digits, it's cents)
-                                const parts = numericMatch[1].split(/[.,]/);
-                                if (parts.length > 1 && parts[parts.length - 1].length === 2) {
-                                    numericValue = parseInt(parts.slice(0, -1).join(''));
-                                }
-
-                                debugInfo.push(`Extracted nightly numeric value: ${numericValue}`);
-
-                                // Realistic nightly price range for Airbnb
-                                if (numericValue >= 30 && numericValue <= 400) {
-                                    price = `$${numericValue}`;
-                                    pricePerNight = numericValue;
-                                    debugInfo.push(`Valid nightly price found for element ${index + 1}: ${price} (${pricePerNight})`);
+                        for (const pattern of nightPatterns) {
+                            const match = allText.match(pattern);
+                            if (match) {
+                                const nights = parseInt(match[0].match(/\d{1,2}/)[0]);
+                                if (nights >= 1 && nights <= 31) {
+                                    stayNights = nights;
+                                    debugInfo.push(`Found stay duration in text for element ${index + 1}: ${stayNights} nights`);
                                     break;
                                 }
                             }
                         }
                     }
 
-                    // If still no nightly price found, look for standalone numbers in realistic nightly range
+                    // Now extract prices more intelligently
+                    let foundTotalPrice = false;
+
+                    // First, look for total prices (handle both large amounts with thousands separators and smaller amounts)
+                    const totalPricePatterns = [
+                        /Total\s*€\s*(\d{1,3}(?:[.,]\d{3})*)/gi, // Total € 1,234 or Total € 317
+                        /Total:\s*€\s*(\d{1,3}(?:[.,]\d{3})*)/gi, // Total: € 1,234 or Total: € 317
+                        /€\s*(\d{1,3}(?:[.,]\d{3})*)\s*€\s*(\d{1,3}(?:[.,]\d{3})*)/gi, // Two prices: € 359 € 330
+                        /€\s*(\d{1,3}(?:[.,]\d{3})*)\s+Mostrar\s+detalhamento/gi, // € 317 Mostrar detalhamento
+                        /€\s*(\d{1,3}(?:[.,]\d{3})*)\s+por\s+\d{1,2}\s+noites?/gi // € 317 por 14 noites (total for X nights)
+                    ];
+
+                    for (const pattern of totalPricePatterns) {
+                        const matches = [...allText.matchAll(pattern)];
+                        if (matches.length > 0) {
+                            debugInfo.push(`Total price pattern matched for element ${index + 1}: ${matches[0][0]}`);
+
+                            // Extract numeric value(s)
+                            let totalValue = null;
+
+                            if (matches[0][1] && matches[0][2]) {
+                                // Two prices - take the lower one (discounted price)
+                                const price1 = parseFloat(matches[0][1].replace(/,/g, ''));
+                                const price2 = parseFloat(matches[0][2].replace(/,/g, ''));
+                                totalValue = Math.min(price1, price2);
+                                debugInfo.push(`Two total prices found: €${price1} and €${price2}, using €${totalValue}`);
+                            } else if (matches[0][1]) {
+                                totalValue = parseFloat(matches[0][1].replace(/,/g, ''));
+                                debugInfo.push(`Single total price found: €${totalValue}`);
+                            }
+
+                            // Adjust the minimum threshold for different regions (Bangkok/Thailand has lower prices)
+                            const minTotalPrice = 100; // Lower threshold for budget destinations
+                            const maxTotalPrice = 8000; // Keep reasonable upper limit
+
+                            if (totalValue && totalValue >= minTotalPrice && totalValue <= maxTotalPrice) {
+                                // This looks like a total price, convert to nightly if we know the nights
+                                if (stayNights && stayNights > 0) {
+                                    pricePerNight = Math.round(totalValue / stayNights);
+                                    price = `$${pricePerNight}`;
+                                    debugInfo.push(`Calculated nightly price: €${totalValue} ÷ ${stayNights} nights = $${pricePerNight}/night`);
+                                    foundTotalPrice = true;
+                                    break;
+                                } else {
+                                    // Use a more accurate estimate based on typical booking patterns
+                                    // Most Airbnb bookings are 3-14 nights, with 7-10 being most common
+                                    let estimatedNights = 10; // Default estimate
+
+                                    // Adjust estimate based on price range (higher prices suggest shorter stays)
+                                    if (totalValue >= 2000) estimatedNights = 8; // Expensive = likely shorter
+                                    else if (totalValue <= 800) estimatedNights = 12; // Cheaper = likely longer
+
+                                    const estimatedNightly = Math.round(totalValue / estimatedNights);
+                                    if (estimatedNightly >= 30 && estimatedNightly <= 400) {
+                                        pricePerNight = estimatedNightly;
+                                        price = `$${pricePerNightly}`;
+                                        debugInfo.push(`Estimated nightly price from total €${totalValue}: ~$${pricePerNight}/night (÷${estimatedNights} estimate)`);
+                                        foundTotalPrice = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // If no total price found, look for explicit nightly prices
+                    if (!foundTotalPrice && !price) {
+                        const nightlyPatterns = [
+                            // Explicit per-night indicators
+                            /€\s*(\d{1,3})\s*(?:por\s*noite|\/\s*noite|per\s*night|\/\s*night)/gi,
+                            /\$\s*(\d{1,3})\s*(?:por\s*noite|\/\s*noite|per\s*night|\/\s*night)/gi,
+
+                            // Small amounts that are likely nightly (not totals)
+                            /€\s*(\d{2,3})\b(?!\s*€)(?!.*(?:Total|total|mensal|month))/gi, // 2-3 digits, standalone, not followed by another price or total indicator
+                            /\$\s*(\d{2,3})\b(?!\s*\$)(?!.*(?:Total|total|mensal|month))/gi
+                        ];
+
+                        for (const pattern of nightlyPatterns) {
+                            const matches = allText.match(pattern);
+                            if (matches && matches.length > 0) {
+                                debugInfo.push(`Nightly price pattern matched for element ${index + 1}: ${matches[0]}`);
+
+                                // Extract the numeric value
+                                const numericMatch = matches[0].match(/(\d{1,3})/);
+                                if (numericMatch) {
+                                    const nightlyValue = parseInt(numericMatch[1]);
+                                    debugInfo.push(`Extracted nightly value: ${nightlyValue}`);
+
+                                    // Realistic nightly price range
+                                    if (nightlyValue >= 30 && nightlyValue <= 400) {
+                                        price = `$${nightlyValue}`;
+                                        pricePerNight = nightlyValue;
+                                        debugInfo.push(`Valid nightly price found for element ${index + 1}: ${price}`);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback: look for small standalone numbers that could be nightly rates
                     if (!price) {
-                        // Skip text with monthly indicators for nightly price extraction
-                        const monthlyKeywords = /mensal|month|mes|monthly/gi;
-                        if (!monthlyKeywords.test(allText)) {
-                            const numberMatches = allText.match(/\b(\d{2,3})\b/g); // 2-3 digit numbers only
-                            if (numberMatches) {
-                                debugInfo.push(`Numbers found in element ${index + 1}: ${numberMatches.slice(0, 5).join(', ')}`);
+                        const numberMatches = allText.match(/\b(\d{2,3})\b/g);
+                        if (numberMatches) {
+                            debugInfo.push(`Fallback numbers found in element ${index + 1}: ${numberMatches.slice(0, 5).join(', ')}`);
+
+                            // Filter out numbers that appear in date contexts or total price contexts
+                            const contextFilter = /\b\d{1,2}\s*(de\s*mar|mar|march|april|abr|€|Total)/gi;
+                            if (!contextFilter.test(allText)) {
                                 for (const num of numberMatches) {
                                     const value = parseInt(num);
-                                    // Realistic Airbnb nightly range: $30-350
-                                    if (value >= 30 && value <= 350) {
+                                    // Conservative nightly range
+                                    if (value >= 50 && value <= 300) {
                                         price = `$${value}`;
                                         pricePerNight = value;
                                         debugInfo.push(`Using fallback nightly price for element ${index + 1}: ${price}`);
