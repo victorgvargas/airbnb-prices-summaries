@@ -1,24 +1,40 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 
-async function scrapeAirbnb(city, targetMonth, guests = 2) {
-    // Calculate target month dates dynamically
-    const today = new Date();
-    const currentYear = today.getFullYear();
+async function scrapeAirbnb(city, dateConfig, progressCallback = null) {
+    let checkinDateString, checkoutDateString, daysInStay;
 
-    // Determine the year for the target month
-    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+    if (dateConfig.mode === 'specific') {
+        // Use specific dates provided
+        checkinDateString = dateConfig.checkin;
+        checkoutDateString = dateConfig.checkout;
+        const checkinDate = new Date(dateConfig.checkin);
+        const checkoutDate = new Date(dateConfig.checkout);
+        daysInStay = Math.ceil((checkoutDate - checkinDate) / (1000 * 60 * 60 * 24));
+    } else {
+        // Use month-based calculation (existing logic)
+        const targetMonth = dateConfig.month;
+        const today = new Date();
+        const currentYear = today.getFullYear();
 
-    // Create first and last day of target month
-    const firstDayOfTargetMonth = new Date(targetYear, targetMonth - 1, 1); // month is 0-indexed
-    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0); // day 0 = last day of previous month
+        // Determine the year for the target month
+        const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
 
-    // Format dates properly to avoid timezone issues
-    const checkinDateString = `${firstDayOfTargetMonth.getFullYear()}-${String(firstDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfTargetMonth.getDate()).padStart(2, '0')}`;
-    const checkoutDateString = `${lastDayOfTargetMonth.getFullYear()}-${String(lastDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfTargetMonth.getDate()).padStart(2, '0')}`;
-    const daysInMonth = lastDayOfTargetMonth.getDate();
+        // Create first and last day of target month
+        const firstDayOfTargetMonth = new Date(targetYear, targetMonth - 1, 1); // month is 0-indexed
+        const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0); // day 0 = last day of previous month
 
-    console.log(`Using dates: ${checkinDateString} to ${checkoutDateString} (${daysInMonth} days)`);
+        // Format dates properly to avoid timezone issues
+        checkinDateString = `${firstDayOfTargetMonth.getFullYear()}-${String(firstDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfTargetMonth.getDate()).padStart(2, '0')}`;
+        checkoutDateString = `${lastDayOfTargetMonth.getFullYear()}-${String(lastDayOfTargetMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfTargetMonth.getDate()).padStart(2, '0')}`;
+        daysInStay = lastDayOfTargetMonth.getDate();
+    }
+
+    console.log(`Using dates: ${checkinDateString} to ${checkoutDateString} (${daysInStay} days)`);
+
+    if (progressCallback) {
+        progressCallback(`🌐 Launching browser for ${city}...`);
+    }
 
     const browser = await puppeteer.launch({
         headless: true, // Set to true for headless mode
@@ -34,12 +50,19 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
     const page = await browser.newPage();
 
     try {
+        if (progressCallback) {
+            progressCallback(`🔍 Navigating to Airbnb for ${city}...`);
+        }
         console.log('Navigating to Airbnb...');
         await page.goto("https://www.airbnb.com/", { waitUntil: 'networkidle2' });
-        await page.setViewport({ width: 1080, height: 1024 });
+        await page.setViewport({ width: 1920, height: 1080 });
 
         // Wait for page to load
         await new Promise(resolve => setTimeout(resolve, 3000));
+
+        if (progressCallback) {
+            progressCallback(`📍 Entering location: ${city}...`);
+        }
 
         // Try to find and click on location input
         console.log('Looking for location input...');
@@ -63,6 +86,9 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
         }
 
         // Look for the specific date button to select next month dates
+        if (progressCallback) {
+            progressCallback(`📅 Setting dates for ${city}...`);
+        }
         console.log('Looking for date button...');
         try {
             // Try the specific class you provided
@@ -143,6 +169,9 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
         }
 
         // Try to find and click search button
+        if (progressCallback) {
+            progressCallback(`🔍 Performing search for ${city}...`);
+        }
         console.log('Looking for search button...');
         try {
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -180,6 +209,9 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
                 }
 
                 // After initial search, apply "Entire place" filter
+                if (progressCallback) {
+                    progressCallback(`🏠 Applying "Entire place" filter for ${city}...`);
+                }
                 console.log('Applying "Entire place" filter...');
                 await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for page to load
 
@@ -303,6 +335,9 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
         }
 
         // Try to extract listings
+        if (progressCallback) {
+            progressCallback(`📋 Extracting listings from ${city}...`);
+        }
         console.log('Attempting to extract listings...');
         await new Promise(resolve => setTimeout(resolve, 5000)); // Increased wait time
 
@@ -539,23 +574,36 @@ async function scrapeAirbnb(city, targetMonth, guests = 2) {
 }
 
 // Function to scrape multiple cities and calculate averages
-async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
+async function scrapeMultipleCities(cities, dateConfigs, maxConcurrent = 1, progressCallback = null) {
     const results = [];
 
-    // Calculate target month info for consistent reporting
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+    for (let i = 0; i < cities.length; i++) {
+        const city = cities[i];
+        let dateConfig;
 
-    const targetDate = new Date(targetYear, targetMonth - 1, 1);
-    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0);
-    const daysInTargetMonth = lastDayOfTargetMonth.getDate();
-    const monthName = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        // Handle different dateConfigs formats for Electron compatibility
+        if (typeof dateConfigs === 'object' && dateConfigs.mode) {
+            // Same config for all cities
+            dateConfig = dateConfigs;
+        } else if (Array.isArray(dateConfigs)) {
+            // Different config per city
+            dateConfig = dateConfigs[i];
+        } else {
+            // Legacy format
+            dateConfig = dateConfigs;
+        }
 
-    for (const city of cities) {
+        if (progressCallback) {
+            progressCallback(`\n==== Processing ${city} (${i + 1}/${cities.length}) ====`);
+        }
         console.log(`\n==== Processing ${city} ====`);
+
         try {
-            const listings = await scrapeAirbnb(city, targetMonth, guests);
+            const listings = await scrapeAirbnb(city, dateConfig, progressCallback);
+
+            if (progressCallback) {
+                progressCallback(`📊 Analyzing ${city} data...`);
+            }
 
             if (listings.length > 0) {
                 const validPrices = listings
@@ -586,32 +634,55 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                     const lowerBoundary = Math.max(minPrice, q1 - 1.5 * iqr);
                     const upperBoundary = Math.min(maxPrice, q3 + 1.5 * iqr);
 
-                    // Calculate monthly price statistics
+                    // Calculate monthly price statistics for ALL listings
+                    // Combine explicit monthly prices with calculated ones (with 20% discount)
+                    const allMonthlyPrices = [];
+                    let explicitMonthlyCount = 0;
+                    let calculatedMonthlyCount = 0;
+
+                    listings.forEach(listing => {
+                        if (listing.pricePerMonth && listing.pricePerMonth > 0) {
+                            // Use explicit monthly price when available
+                            allMonthlyPrices.push(listing.pricePerMonth);
+                            explicitMonthlyCount++;
+                        } else if (listing.pricePerNight && listing.pricePerNight > 0) {
+                            // Calculate monthly price from nightly with 20% discount
+                            const calculatedMonthly = Math.round(listing.pricePerNight * 30 * 0.8); // 20% discount
+                            allMonthlyPrices.push(calculatedMonthly);
+                            calculatedMonthlyCount++;
+                        }
+                    });
+
                     let monthlyStats = null;
-                    if (validMonthlyPrices.length > 0) {
-                        // Use actual monthly prices when available
-                        const averageMonthlyPrice = Math.round(validMonthlyPrices.reduce((sum, price) => sum + price, 0) / validMonthlyPrices.length);
-                        const minMonthlyPrice = Math.min(...validMonthlyPrices);
-                        const maxMonthlyPrice = Math.max(...validMonthlyPrices);
+                    if (allMonthlyPrices.length > 0) {
+                        const averageMonthlyPrice = Math.round(allMonthlyPrices.reduce((sum, price) => sum + price, 0) / allMonthlyPrices.length);
+                        const minMonthlyPrice = Math.min(...allMonthlyPrices);
+                        const maxMonthlyPrice = Math.max(...allMonthlyPrices);
 
                         monthlyStats = {
                             averageMonthlyPrice,
                             minMonthlyPrice,
                             maxMonthlyPrice,
-                            monthlyListingsFound: validMonthlyPrices.length
+                            monthlyListingsFound: explicitMonthlyCount,
+                            calculatedMonthlyListings: calculatedMonthlyCount,
+                            totalMonthlyListings: allMonthlyPrices.length,
+                            hasCalculatedPrices: calculatedMonthlyCount > 0,
+                            hasExplicitPrices: explicitMonthlyCount > 0
                         };
-                    } else if (validPrices.length > 0) {
-                        // Calculate monthly prices based on nightly prices (30-day average)
-                        const averageMonthlyPrice = Math.round(averagePrice * 30);
-                        const minMonthlyPrice = Math.round(minPrice * 30);
-                        const maxMonthlyPrice = Math.round(maxPrice * 30);
+                    }
 
-                        monthlyStats = {
-                            averageMonthlyPrice,
-                            minMonthlyPrice,
-                            maxMonthlyPrice,
-                            monthlyListingsFound: 0, // Indicates calculated, not extracted
-                            calculatedFromNightly: true
+                    // Calculate nights count and total cost for specific date ranges
+                    let stayNights = 0;
+                    let totalCost = null;
+                    if (dateConfig.mode === 'specific') {
+                        const checkinDate = new Date(dateConfig.checkin);
+                        const checkoutDate = new Date(dateConfig.checkout);
+                        stayNights = Math.ceil((checkoutDate - checkinDate) / (1000 * 60 * 60 * 24));
+                        totalCost = {
+                            average: Math.round(averagePrice * stayNights),
+                            min: Math.round(minPrice * stayNights),
+                            max: Math.round(maxPrice * stayNights),
+                            nights: stayNights
                         };
                     }
 
@@ -628,6 +699,7 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                         upperBoundary,
                         listingsFound: validPrices.length,
                         totalListings: listings.length,
+                        totalCost, // Add total cost calculation
                         ...monthlyStats
                     });
 
@@ -635,9 +707,41 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                         `, Monthly: $${monthlyStats.averageMonthlyPrice} (${monthlyStats.monthlyListingsFound} listings)` :
                         ', No monthly prices found';
 
-                    console.log(`${city}: Found ${validPrices.length} valid nightly prices, Average: $${averagePrice}/night${monthlyInfo} for ${monthName}`);
+                    // Generate date range description for this city
+                    let dateDescription;
+                    let displayNights = 0;
+                    if (dateConfig.mode === 'specific') {
+                        const checkinDate = new Date(dateConfig.checkin);
+                        const checkoutDate = new Date(dateConfig.checkout);
+                        displayNights = Math.ceil((checkoutDate - checkinDate) / (1000 * 60 * 60 * 24));
+                        dateDescription = `${dateConfig.checkin} to ${dateConfig.checkout} (${displayNights} nights)`;
+                    } else {
+                        const today = new Date();
+                        const currentYear = today.getFullYear();
+                        const targetYear = dateConfig.month <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+                        const targetDate = new Date(targetYear, dateConfig.month - 1, 1);
+                        const lastDayOfTargetMonth = new Date(targetYear, dateConfig.month, 0);
+                        displayNights = lastDayOfTargetMonth.getDate();
+                        dateDescription = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+                    }
+
+                    // Calculate total cost for the stay period (for interactive mode with specific dates)
+                    let totalCostInfo = '';
+                    if (dateConfig.mode === 'specific' && displayNights > 0) {
+                        const totalCost = Math.round(averagePrice * displayNights);
+                        totalCostInfo = ` | Total stay cost: ~$${totalCost} (${displayNights} nights × $${averagePrice})`;
+                    }
+
+                    const successMessage = `${city}: Found ${validPrices.length} valid nightly prices, Average: $${averagePrice}/night${monthlyInfo} for ${dateDescription}${totalCostInfo}`;
+                    console.log(successMessage);
+                    if (progressCallback) {
+                        progressCallback(`✅ ${city}: Found ${validPrices.length} prices, Average: $${averagePrice}/night`);
+                    }
                 } else {
                     console.log(`${city}: No valid prices found`);
+                    if (progressCallback) {
+                        progressCallback(`⚠️ ${city}: Found listings but no valid prices`);
+                    }
                     results.push({
                         city,
                         averagePrice: null,
@@ -660,6 +764,9 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
                 }
             } else {
                 console.log(`${city}: No listings found`);
+                if (progressCallback) {
+                    progressCallback(`❌ ${city}: No listings found`);
+                }
                 results.push({
                     city,
                     averagePrice: null,
@@ -682,6 +789,9 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
             }
         } catch (error) {
             console.error(`Error processing ${city}:`, error.message);
+            if (progressCallback) {
+                progressCallback(`❌ ${city}: ${error.message}`);
+            }
             results.push({
                 city,
                 averagePrice: null,
@@ -705,12 +815,24 @@ async function scrapeMultipleCities(cities, targetMonth, guests = 2) {
 
         // Add delay between cities to avoid rate limiting
         if (cities.indexOf(city) < cities.length - 1) {
-            console.log('Waiting 5 seconds before next city...');
+            const waitMessage = 'Waiting 5 seconds before next city...';
+            console.log(waitMessage);
+            if (progressCallback) {
+                progressCallback(`⏳ ${waitMessage}`);
+            }
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
 
-    return results;
+    // Return Electron-compatible format
+    return {
+        cities: results,
+        summary: {
+            totalCities: cities.length,
+            successfulCities: results.filter(r => !r.error).length,
+            failedCities: results.filter(r => r.error).length
+        }
+    };
 }
 
 // Function to write results to file
@@ -744,9 +866,9 @@ async function writeResultsToFile(results, filename = 'airbnb-price-analysis.jso
 
         // Also create a CSV version for easy analysis
         const csvFilename = filename.replace('.json', '.csv');
-        const csvHeaders = 'City,Average Nightly Price,Median,Min Nightly,Max Nightly,Q1,Q3,IQR,Lower Boundary,Upper Boundary,Average Monthly Price,Min Monthly,Max Monthly,Nightly Listings Found,Monthly Listings Found,Status\n';
+        const csvHeaders = 'City,Average Nightly Price,Median,Min Nightly,Max Nightly,Q1,Q3,IQR,Lower Boundary,Upper Boundary,Average Monthly Price,Min Monthly,Max Monthly,Nightly Listings Found,Monthly Listings Found,Total Cost Average,Total Cost Range,Nights,Status\n';
         const csvRows = results.map(r =>
-            `"${r.city}",${r.averagePrice || 'N/A'},${r.median || 'N/A'},${r.minPrice || 'N/A'},${r.maxPrice || 'N/A'},${r.q1 || 'N/A'},${r.q3 || 'N/A'},${r.iqr || 'N/A'},${r.lowerBoundary || 'N/A'},${r.upperBoundary || 'N/A'},${r.averageMonthlyPrice || 'N/A'},${r.minMonthlyPrice || 'N/A'},${r.maxMonthlyPrice || 'N/A'},${r.listingsFound},${r.monthlyListingsFound || 0},${r.error ? 'Failed' : 'Success'}`
+            `"${r.city}",${r.averagePrice || 'N/A'},${r.median || 'N/A'},${r.minPrice || 'N/A'},${r.maxPrice || 'N/A'},${r.q1 || 'N/A'},${r.q3 || 'N/A'},${r.iqr || 'N/A'},${r.lowerBoundary || 'N/A'},${r.upperBoundary || 'N/A'},${r.averageMonthlyPrice || 'N/A'},${r.minMonthlyPrice || 'N/A'},${r.maxMonthlyPrice || 'N/A'},${r.listingsFound},${r.monthlyListingsFound || 0},${r.totalCost ? r.totalCost.average : 'N/A'},${r.totalCost ? `${r.totalCost.min}-${r.totalCost.max}` : 'N/A'},${r.totalCost ? r.totalCost.nights : 'N/A'},${r.error ? 'Failed' : 'Success'}`
         ).join('\n');
 
         await fs.writeFile(csvFilename, csvHeaders + csvRows);
@@ -759,42 +881,175 @@ async function writeResultsToFile(results, filename = 'airbnb-price-analysis.jso
     }
 }
 
+// Interactive date selection functions
+const readline = require('readline');
+
+function createReadlineInterface() {
+    return readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+}
+
+function question(rl, query) {
+    return new Promise(resolve => rl.question(query, resolve));
+}
+
+function isValidDate(dateString) {
+    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!regex.test(dateString)) return false;
+
+    const date = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return date instanceof Date && !isNaN(date) && date >= today;
+}
+
+async function getDateSelectionMode(rl) {
+    console.log('\n==== DATE SELECTION MODE ====');
+    console.log('1. Same dates for all cities (enter start/end dates or number of months)');
+    console.log('2. Different dates per city (specify dates for each city individually)');
+    console.log('3. Use month parameter (original functionality)');
+
+    let mode;
+    while (true) {
+        const answer = await question(rl, 'Select mode (1, 2, or 3): ');
+        if (['1', '2', '3'].includes(answer)) {
+            mode = parseInt(answer);
+            break;
+        }
+        console.log('Please enter 1, 2, or 3');
+    }
+
+    return mode;
+}
+
+async function getSpecificDatesForAllCities(rl) {
+    console.log('\n==== DATES FOR ALL CITIES ====');
+    console.log('Choose date input method:');
+    console.log('1. Specify start and end dates (YYYY-MM-DD format)');
+    console.log('2. Specify start date and number of months');
+
+    let method;
+    while (true) {
+        const answer = await question(rl, 'Select method (1 or 2): ');
+        if (['1', '2'].includes(answer)) {
+            method = parseInt(answer);
+            break;
+        }
+        console.log('Please enter 1 or 2');
+    }
+
+    if (method === 1) {
+        // Specific start and end dates
+        let checkin, checkout;
+
+        while (true) {
+            checkin = await question(rl, 'Enter check-in date (YYYY-MM-DD): ');
+            if (isValidDate(checkin)) break;
+            console.log('Invalid date. Please use YYYY-MM-DD format and ensure date is today or in the future.');
+        }
+
+        while (true) {
+            checkout = await question(rl, 'Enter check-out date (YYYY-MM-DD): ');
+            if (isValidDate(checkout) && new Date(checkout) > new Date(checkin)) break;
+            console.log('Invalid date. Check-out must be after check-in date and use YYYY-MM-DD format.');
+        }
+
+        return { mode: 'specific', checkin, checkout };
+
+    } else {
+        // Start date and number of months
+        let checkin, months;
+
+        while (true) {
+            checkin = await question(rl, 'Enter check-in date (YYYY-MM-DD): ');
+            if (isValidDate(checkin)) break;
+            console.log('Invalid date. Please use YYYY-MM-DD format and ensure date is today or in the future.');
+        }
+
+        while (true) {
+            const monthsInput = await question(rl, 'Enter number of months (1-12): ');
+            months = parseInt(monthsInput);
+            if (months >= 1 && months <= 12) break;
+            console.log('Please enter a number between 1 and 12');
+        }
+
+        const checkinDate = new Date(checkin);
+        const checkoutDate = new Date(checkinDate);
+        checkoutDate.setMonth(checkoutDate.getMonth() + months);
+
+        const checkout = checkoutDate.toISOString().split('T')[0];
+
+        return { mode: 'specific', checkin, checkout };
+    }
+}
+
+async function getSpecificDatesPerCity(rl, cities) {
+    console.log('\n==== DATES PER CITY ====');
+    const dateConfigs = [];
+
+    for (const city of cities) {
+        console.log(`\nDates for ${city}:`);
+        let checkin, checkout;
+
+        while (true) {
+            checkin = await question(rl, `  Check-in date for ${city} (YYYY-MM-DD): `);
+            if (isValidDate(checkin)) break;
+            console.log('  Invalid date. Please use YYYY-MM-DD format and ensure date is today or in the future.');
+        }
+
+        while (true) {
+            checkout = await question(rl, `  Check-out date for ${city} (YYYY-MM-DD): `);
+            if (isValidDate(checkout) && new Date(checkout) > new Date(checkin)) break;
+            console.log('  Invalid date. Check-out must be after check-in date and use YYYY-MM-DD format.');
+        }
+
+        dateConfigs.push({ mode: 'specific', checkin, checkout });
+    }
+
+    return dateConfigs;
+}
+
 // Parse command line arguments
 function parseArgs() {
     const args = process.argv.slice(2);
 
     // Check for help flags
     if (args.includes('--help') || args.includes('-h')) {
-        console.log('Usage: node src/index.js <city1> [city2] [city3] ... [--month <1-12>]');
-        console.log('Example: node src/index.js Paris Lisbon Helsinki');
-        console.log('Example: node src/index.js "New York" London Tokyo --month 6');
-        console.log('Example: node src/index.js Barcelona --month 12');
+        console.log('Usage: node src/index.js [options] <city1> [city2] [city3] ...');
         console.log('');
         console.log('Options:');
         console.log('  --month <1-12>    Month to analyze (1=January, 12=December)');
         console.log('                    Must be greater than current month');
         console.log('                    Defaults to next month if not specified');
+        console.log('  --interactive     Enable interactive date selection mode');
         console.log('  --help, -h        Show this help message');
+        console.log('');
+        console.log('Examples:');
+        console.log('  node src/index.js Paris Lisbon Helsinki');
+        console.log('  node src/index.js "New York" London Tokyo --month 6');
+        console.log('  node src/index.js Barcelona --month 12');
+        console.log('  node src/index.js --interactive "New York" Paris Tokyo');
+        console.log('');
+        console.log('Interactive Mode:');
+        console.log('  When --interactive is used, you will be prompted to select:');
+        console.log('  - Same dates for all cities, or different dates per city');
+        console.log('  - Specific start/end dates or start date + duration');
         process.exit(0);
     }
 
     if (args.length === 0) {
-        console.log('Usage: node src/index.js <city1> [city2] [city3] ... [--month <1-12>]');
-        console.log('Example: node src/index.js Paris Lisbon Helsinki');
-        console.log('Example: node src/index.js "New York" London Tokyo --month 6');
-        console.log('Example: node src/index.js Barcelona --month 12');
-        console.log('');
-        console.log('Options:');
-        console.log('  --month <1-12>    Month to analyze (1=January, 12=December)');
-        console.log('                    Must be greater than current month');
-        console.log('                    Defaults to next month if not specified');
-        console.log('  --help, -h        Show this help message');
+        console.log('Usage: node src/index.js [options] <city1> [city2] [city3] ...');
+        console.log('Use --help for more information');
         process.exit(0);
     }
 
-    // Parse cities and month option
+    // Parse cities, month option, and interactive flag
     const cities = [];
     let targetMonth = null;
+    let interactive = false;
 
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--month') {
@@ -816,6 +1071,8 @@ function parseArgs() {
 
             targetMonth = monthValue;
             i++; // Skip the next argument (month value)
+        } else if (args[i] === '--interactive') {
+            interactive = true;
         } else {
             cities.push(args[i]);
         }
@@ -826,137 +1083,214 @@ function parseArgs() {
         process.exit(1);
     }
 
-    // Default to next month if not specified
-    if (targetMonth === null) {
+    // Default to next month if not specified and not interactive
+    if (targetMonth === null && !interactive) {
         const currentMonth = new Date().getMonth() + 1;
         targetMonth = currentMonth === 12 ? 1 : currentMonth + 1;
     }
 
-    return { cities, targetMonth };
+    return { cities, targetMonth, interactive };
 }
 
-// Main execution with command line arguments
-(async () => {
-    // Get cities and target month from command line arguments
-    const { cities, targetMonth } = parseArgs();
-    const guests = 1;
+// Main execution with command line arguments - only run if this file is executed directly
+if (require.main === module) {
+    (async () => {
+        // Get cities, target month, and interactive flag from command line arguments
+        const { cities, targetMonth, interactive } = parseArgs();
+        const guests = 1;
+        let dateConfigs;
 
-    // Calculate target month info for reporting
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const targetYear = targetMonth <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+        if (interactive) {
+            // Interactive mode - prompt user for date selection
+            const rl = createReadlineInterface();
 
-    const targetDate = new Date(targetYear, targetMonth - 1, 1);
-    const lastDayOfTargetMonth = new Date(targetYear, targetMonth, 0);
-    const daysInTargetMonth = lastDayOfTargetMonth.getDate();
-    const monthName = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            try {
+                const mode = await getDateSelectionMode(rl);
 
-    console.log(`Starting Airbnb price analysis for ${monthName} (${daysInTargetMonth} days)...`);
-    console.log('Cities to analyze:', cities.join(', '));
-    console.log('\nNote: This tool analyzes short-term Airbnb rentals and provides:');
-    console.log('- Actual Airbnb nightly rates for entire apartments');
-    console.log('- Actual Airbnb monthly rates (when available)');
-    console.log('- Statistical distribution analysis (boxplot with quartiles)');
-    console.log('- Both rates extracted from the same listing when displayed together\n');
-
-    try {
-        const results = await scrapeMultipleCities(cities, targetMonth, guests);
-
-        // Write results to file
-        await writeResultsToFile(results);
-
-        // Display summary
-        console.log('\n==== SUMMARY ====');
-        console.log(`Total cities analyzed: ${results.length}`);
-        console.log(`Successful extractions: ${results.filter(r => r.averagePrice !== null).length}`);
-        console.log(`Failed extractions: ${results.filter(r => r.averagePrice === null).length}`);
-
-        // Display results
-        console.log('\n==== RESULTS ====');
-        results.forEach(result => {
-            if (result.averagePrice) {
-                console.log(`${result.city}:`);
-                console.log(`  Nightly Rates:`);
-                console.log(`    Average: $${result.averagePrice}/night`);
-                console.log(`    Median: $${result.median}/night`);
-                console.log(`    Range: $${result.minPrice} - $${result.maxPrice}`);
-                console.log(`    Boxplot Analysis:`);
-                console.log(`      Q1 (25th percentile): $${result.q1}/night`);
-                console.log(`      Q3 (75th percentile): $${result.q3}/night`);
-                console.log(`      IQR (Interquartile Range): $${result.iqr}/night`);
-                console.log(`      Typical price range: $${result.lowerBoundary} - $${result.upperBoundary}/night (50% of data)`);
-                console.log(`    Listings analyzed: ${result.listingsFound}`);
-
-                if (result.averageMonthlyPrice) {
-                    console.log(`  Monthly Rates:`);
-                    console.log(`    Average: $${result.averageMonthlyPrice}/month`);
-                    console.log(`    Range: $${result.minMonthlyPrice} - $${result.maxMonthlyPrice}/month`);
-                    if (result.calculatedFromNightly) {
-                        console.log(`    Source: Calculated from nightly rates (30-day estimate)`);
-                    } else {
-                        console.log(`    Listings with monthly prices: ${result.monthlyListingsFound}`);
-                    }
+                if (mode === 1) {
+                    // Same dates for all cities
+                    const dateConfig = await getSpecificDatesForAllCities(rl);
+                    dateConfigs = dateConfig; // Same config for all cities
+                    console.log(`\nUsing dates: ${dateConfig.checkin} to ${dateConfig.checkout} for all cities`);
+                } else if (mode === 2) {
+                    // Different dates per city
+                    dateConfigs = await getSpecificDatesPerCity(rl, cities);
+                    console.log('\nUsing different dates for each city');
                 } else {
-                    console.log(`  Monthly Rates: Not available`);
+                    // Mode 3: Use month parameter
+                    if (!targetMonth) {
+                        const currentMonth = new Date().getMonth() + 1;
+                        const defaultMonth = currentMonth === 12 ? 1 : currentMonth + 1;
+                        dateConfigs = { mode: 'month', month: defaultMonth };
+                    } else {
+                        dateConfigs = { mode: 'month', month: targetMonth };
+                    }
                 }
-            } else {
-                console.log(`${result.city}: ${result.error || 'Failed to get data'}`);
+            } finally {
+                rl.close();
             }
-        });
-
-        // Show overall averages
-        const successfulResults = results.filter(r => r.averagePrice !== null);
-        if (successfulResults.length > 0) {
-            const overallAverage = Math.round(
-                successfulResults.reduce((sum, r) => sum + r.averagePrice, 0) / successfulResults.length
-            );
-            const overallMedian = Math.round(
-                successfulResults.reduce((sum, r) => sum + r.median, 0) / successfulResults.length
-            );
-
-            // Calculate overall boxplot statistics
-            const allPrices = [];
-            successfulResults.forEach(r => {
-                for (let i = 0; i < r.listingsFound; i++) {
-                    allPrices.push(r.averagePrice); // Approximate distribution using averages
-                }
-            });
-            allPrices.sort((a, b) => a - b);
-
-            const overallQ1 = allPrices[Math.floor(allPrices.length * 0.25)];
-            const overallQ3 = allPrices[Math.floor(allPrices.length * 0.75)];
-            const overallIQR = overallQ3 - overallQ1;
-
-            console.log(`\n==== NIGHTLY RATES SUMMARY ====`);
-            console.log(`Average across all cities: $${overallAverage}/night`);
-            console.log(`Median across all cities: $${overallMedian}/night`);
-            console.log(`Overall price distribution:`);
-            console.log(`  Q1: $${overallQ1}/night`);
-            console.log(`  Q3: $${overallQ3}/night`);
-            console.log(`  IQR: $${overallIQR}/night`);
-
-            // Monthly summary if available
-            const monthlyResults = results.filter(r => r.averageMonthlyPrice !== null);
-            if (monthlyResults.length > 0) {
-                const overallMonthlyAverage = Math.round(
-                    monthlyResults.reduce((sum, r) => sum + r.averageMonthlyPrice, 0) / monthlyResults.length
-                );
-                console.log(`\n==== MONTHLY RATES SUMMARY ====`);
-                console.log(`Average across all cities with monthly data: $${overallMonthlyAverage}/month`);
-
-                const actualMonthlyResults = monthlyResults.filter(r => !r.calculatedFromNightly);
-                const calculatedMonthlyResults = monthlyResults.filter(r => r.calculatedFromNightly);
-
-                if (actualMonthlyResults.length > 0) {
-                    console.log(`Cities with actual monthly pricing: ${actualMonthlyResults.map(r => r.city).join(', ')}`);
-                }
-                if (calculatedMonthlyResults.length > 0) {
-                    console.log(`Cities with calculated monthly pricing: ${calculatedMonthlyResults.map(r => r.city).join(', ')}`);
-                }
-            }
+        } else {
+            // Non-interactive mode - use month parameter
+            dateConfigs = { mode: 'month', month: targetMonth };
         }
 
-    } catch (error) {
-        console.error('Error in main execution:', error);
-    }
-})();
+        // Calculate display info
+        let displayInfo;
+        if (Array.isArray(dateConfigs)) {
+            displayInfo = 'custom date ranges per city';
+        } else if (dateConfigs.mode === 'specific') {
+            const checkinDate = new Date(dateConfigs.checkin);
+            const checkoutDate = new Date(dateConfigs.checkout);
+            const days = Math.ceil((checkoutDate - checkinDate) / (1000 * 60 * 60 * 24));
+            displayInfo = `${dateConfigs.checkin} to ${dateConfigs.checkout} (${days} days)`;
+        } else {
+            // Month mode
+            const today = new Date();
+            const currentYear = today.getFullYear();
+            const targetYear = dateConfigs.month <= today.getMonth() + 1 ? currentYear + 1 : currentYear;
+            const targetDate = new Date(targetYear, dateConfigs.month - 1, 1);
+            const lastDayOfTargetMonth = new Date(targetYear, dateConfigs.month, 0);
+            const daysInTargetMonth = lastDayOfTargetMonth.getDate();
+            const monthName = targetDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            displayInfo = `${monthName} (${daysInTargetMonth} days)`;
+        }
+
+        console.log(`Starting Airbnb price analysis for ${displayInfo}...`);
+        console.log('Cities to analyze:', cities.join(', '));
+        console.log('\nNote: This tool analyzes short-term Airbnb rentals and provides:');
+        console.log('- Actual Airbnb nightly rates for entire apartments');
+        console.log('- Actual Airbnb monthly rates (when available)');
+        console.log('- Calculated monthly rates with 20% discount (when no explicit monthly rates)');
+        console.log('- Statistical distribution analysis (boxplot with quartiles)');
+        console.log('- Both rates extracted from the same listing when displayed together\n');
+
+        try {
+            const results = await scrapeMultipleCities(cities, dateConfigs, 1);
+
+            // Write results to file
+            await writeResultsToFile(results.cities);
+
+            // Display summary
+            console.log('\n==== SUMMARY ====');
+            console.log(`Total cities analyzed: ${results.cities.length}`);
+            console.log(`Successful extractions: ${results.cities.filter(r => r.averagePrice !== null).length}`);
+            console.log(`Failed extractions: ${results.cities.filter(r => r.averagePrice === null).length}`);
+
+            // Display results
+            console.log('\n==== RESULTS ====');
+            results.cities.forEach(result => {
+                if (result.averagePrice) {
+                    console.log(`${result.city}:`);
+                    console.log(`  Nightly Rates:`);
+                    console.log(`    Average: $${result.averagePrice}/night`);
+                    console.log(`    Median: $${result.median}/night`);
+                    console.log(`    Range: $${result.minPrice} - $${result.maxPrice}`);
+                    console.log(`    Boxplot Analysis:`);
+                    console.log(`      Q1 (25th percentile): $${result.q1}/night`);
+                    console.log(`      Q3 (75th percentile): $${result.q3}/night`);
+                    console.log(`      IQR (Interquartile Range): $${result.iqr}/night`);
+                    console.log(`      Typical price range: $${result.lowerBoundary} - $${result.upperBoundary}/night (50% of data)`);
+                    console.log(`    Listings analyzed: ${result.listingsFound}`);
+
+                    // Show total cost calculation for specific date ranges
+                    if (result.totalCost) {
+                        console.log(`  Total Stay Cost (${result.totalCost.nights} nights):`);
+                        console.log(`    Average total: $${result.totalCost.average}`);
+                        console.log(`    Range: $${result.totalCost.min} - $${result.totalCost.max}`);
+                        console.log(`    Breakdown: ${result.totalCost.nights} nights × $${result.averagePrice} average = $${result.totalCost.average}`);
+                    }
+
+                    if (result.averageMonthlyPrice) {
+                        console.log(`  Monthly Rates:`);
+                        console.log(`    Average: $${result.averageMonthlyPrice}/month`);
+                        console.log(`    Range: $${result.minMonthlyPrice} - $${result.maxMonthlyPrice}/month`);
+
+                        if (result.hasExplicitPrices && result.hasCalculatedPrices) {
+                            console.log(`    Listings: ${result.monthlyListingsFound} explicit + ${result.calculatedMonthlyListings} calculated (20% discount)`);
+                        } else if (result.hasExplicitPrices) {
+                            console.log(`    Listings with explicit monthly prices: ${result.monthlyListingsFound}`);
+                        } else if (result.hasCalculatedPrices) {
+                            console.log(`    Source: Calculated from nightly rates (30-day estimate with 20% discount)`);
+                        }
+                        console.log(`    Total monthly listings analyzed: ${result.totalMonthlyListings}`);
+                    } else {
+                        console.log(`  Monthly Rates: Not available`);
+                    }
+                } else {
+                    console.log(`${result.city}: ${result.error || 'Failed to get data'}`);
+                }
+            });
+
+            // Show overall averages
+            const successfulResults = results.cities.filter(r => r.averagePrice !== null);
+            if (successfulResults.length > 0) {
+                const overallAverage = Math.round(
+                    successfulResults.reduce((sum, r) => sum + r.averagePrice, 0) / successfulResults.length
+                );
+                const overallMedian = Math.round(
+                    successfulResults.reduce((sum, r) => sum + r.median, 0) / successfulResults.length
+                );
+
+                // Calculate overall boxplot statistics
+                const allPrices = [];
+                successfulResults.forEach(r => {
+                    for (let i = 0; i < r.listingsFound; i++) {
+                        allPrices.push(r.averagePrice); // Approximate distribution using averages
+                    }
+                });
+                allPrices.sort((a, b) => a - b);
+
+                const overallQ1 = allPrices[Math.floor(allPrices.length * 0.25)];
+                const overallQ3 = allPrices[Math.floor(allPrices.length * 0.75)];
+                const overallIQR = overallQ3 - overallQ1;
+
+                console.log(`\n==== NIGHTLY RATES SUMMARY ====`);
+                console.log(`Average across all cities: $${overallAverage}/night`);
+                console.log(`Median across all cities: $${overallMedian}/night`);
+                console.log(`Overall price distribution:`);
+                console.log(`  Q1: $${overallQ1}/night`);
+                console.log(`  Q3: $${overallQ3}/night`);
+                console.log(`  IQR: $${overallIQR}/night`);
+
+                // Monthly summary if available
+                const monthlyResults = results.cities.filter(r => r.averageMonthlyPrice !== null);
+                if (monthlyResults.length > 0) {
+                    const overallMonthlyAverage = Math.round(
+                        monthlyResults.reduce((sum, r) => sum + r.averageMonthlyPrice, 0) / monthlyResults.length
+                    );
+                    console.log(`\n==== MONTHLY RATES SUMMARY ====`);
+                    console.log(`Average across all cities with monthly data: $${overallMonthlyAverage}/month`);
+
+                    const explicitOnlyResults = monthlyResults.filter(r => r.hasExplicitPrices && !r.hasCalculatedPrices);
+                    const calculatedOnlyResults = monthlyResults.filter(r => r.hasCalculatedPrices && !r.hasExplicitPrices);
+                    const mixedResults = monthlyResults.filter(r => r.hasExplicitPrices && r.hasCalculatedPrices);
+
+                    if (explicitOnlyResults.length > 0) {
+                        console.log(`Cities with explicit monthly pricing only: ${explicitOnlyResults.map(r => r.city).join(', ')}`);
+                    }
+                    if (calculatedOnlyResults.length > 0) {
+                        console.log(`Cities with calculated monthly pricing only (20% discount): ${calculatedOnlyResults.map(r => r.city).join(', ')}`);
+                    }
+                    if (mixedResults.length > 0) {
+                        console.log(`Cities with mixed pricing (explicit + calculated): ${mixedResults.map(r => r.city).join(', ')}`);
+                    }
+
+                    // Show total listings summary
+                    const totalExplicitListings = monthlyResults.reduce((sum, r) => sum + (r.monthlyListingsFound || 0), 0);
+                    const totalCalculatedListings = monthlyResults.reduce((sum, r) => sum + (r.calculatedMonthlyListings || 0), 0);
+                    console.log(`Total monthly listings analyzed: ${totalExplicitListings + totalCalculatedListings} (${totalExplicitListings} explicit + ${totalCalculatedListings} calculated)`);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error in main execution:', error);
+        }
+    })();
+}
+
+// Export functions for use in Electron app
+module.exports = {
+    scrapeAirbnb,
+    scrapeMultipleCities,
+    writeResultsToFile
+};

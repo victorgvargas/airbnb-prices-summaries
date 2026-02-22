@@ -1,25 +1,33 @@
-# Airbnb Price Analyzer
+# 🏠 Airbnb Price Analyzer
 
-A Node.js script that scrapes Airbnb to analyze pricing data for entire apartments/homes across multiple cities.
+A comprehensive tool for analyzing Airbnb prices across multiple cities. Available as both a command-line interface and a beautiful desktop application.
 
-## Features
+## 🖥️ Desktop Application (New!)
 
-- **Dual Price Extraction**: Captures both nightly rates and actual monthly prices from Airbnb listings
-- **Statistical Analysis**: Provides comprehensive boxplot statistics (Q1, Q3, median, IQR, outlier boundaries)
-- **Multi-City Support**: Analyze multiple cities in a single run
-- **Command Line Interface**: Flexible city selection via command line arguments
-- **Export Options**: Results saved in both JSON and CSV formats
-- **Realistic Pricing**: Filters out unrealistic prices and focuses on $30-400 nightly range
+For the best user experience, use the new **Electron desktop application** with a beautiful graphical interface:
 
-## Installation
+### Quick Start
+1. Install dependencies: `npm install`
+2. Launch the app: `npm run dev`
+3. Use the intuitive point-and-click interface!
 
+### Desktop Features
+- **🎨 Beautiful Modern UI**: No command line required
+- **📊 Real-time Progress**: Watch analysis progress with visual feedback
+- **💾 Easy Export**: One-click export to JSON/CSV
+- **📅 Visual Date Selection**: Calendar-based date pickers
+- **📈 Interactive Results**: Organized table with summary statistics
+- **🔄 Background Processing**: Analysis runs in background without blocking UI
+
+### Building Desktop Apps
 ```bash
-npm install puppeteer
+npm run build        # Current platform
+npm run build:all    # All platforms (Windows, Mac, Linux)
 ```
 
-## Usage
+---
 
-### Command Line Interface
+## 💻 Command Line Interface
 
 ```bash
 # Single city (defaults to next month)
@@ -36,10 +44,30 @@ node src/index.js Paris --month 6
 node src/index.js Barcelona Madrid --month 12
 node src/index.js "San Francisco" Seattle --month 4
 
+# Interactive date selection mode
+node src/index.js --interactive Paris Barcelona Tokyo
+node src/index.js --interactive "New York" London
+
 # More examples
 node src/index.js Madrid Rome Amsterdam
 node src/index.js "New York" --month 8
 ```
+
+### Interactive Date Selection
+
+When using the `--interactive` flag, you'll be prompted to select:
+
+#### Mode 1: Same dates for all cities
+- **Option 1**: Specify exact start and end dates (YYYY-MM-DD format)
+- **Option 2**: Specify start date and duration in months
+- **Bonus**: Automatically calculates total stay cost (nights × average nightly price)
+
+#### Mode 2: Different dates per city
+- Set custom check-in and check-out dates for each city individually
+- **Bonus**: Shows individual total costs for each city's date range
+
+#### Mode 3: Month-based analysis
+- Use the traditional month parameter functionality
 
 ### Month Parameter
 

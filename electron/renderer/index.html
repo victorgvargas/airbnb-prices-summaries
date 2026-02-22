@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airbnb Price Analyzer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1>🏠 Airbnb Price Analyzer</h1>
+                <p class="subtitle">Analyze and compare Airbnb prices across multiple cities</p>
+            </div>
+            <div class="header-actions">
+                <button id="aboutBtn" class="btn btn-secondary">About</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Configuration Panel -->
+            <section class="config-panel">
+                <div class="panel-header">
+                    <h2>🛠️ Configuration</h2>
+                </div>
+
+                <!-- Cities Input -->
+                <div class="input-group">
+                    <label for="citiesInput">Cities to Analyze</label>
+                    <textarea id="citiesInput"
+                        placeholder="Enter cities, one per line (e.g., New York, London, Tokyo)"></textarea>
+                    <small class="help-text">Enter each city on a new line. The scraper will search for these on
+                        Airbnb.</small>
+                </div>
+
+                <!-- Date Mode Selection -->
+                <div class="input-group">
+                    <label>Date Selection Mode</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="dateMode" value="specific-all" checked>
+                            <span class="radio-label">Same dates for all cities</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateMode" value="specific-per-city">
+                            <span class="radio-label">Different dates per city</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateMode" value="month">
+                            <span class="radio-label">Analyze entire month</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Date Inputs (Dynamic based on mode) -->
+                <div id="dateInputs" class="input-group">
+                    <!-- Will be populated dynamically -->
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button id="startAnalysisBtn" class="btn btn-primary">
+                        <span class="btn-icon">🔍</span>
+                        Start Analysis
+                    </button>
+                    <button id="clearFormBtn" class="btn btn-secondary">
+                        <span class="btn-icon">🗑️</span>
+                        Clear Form
+                    </button>
+                </div>
+            </section>
+
+            <!-- Progress Panel -->
+            <section id="progressPanel" class="progress-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>📊 Analysis Progress</h2>
+                    <div class="progress-stats">
+                        <span id="currentStep">Step 1</span>
+                        <span id="cityProgress">0/0 cities</span>
+                    </div>
+                </div>
+                <div class="progress-content">
+                    <div class="progress-overview">
+                        <div class="overall-progress">
+                            <div class="progress-label">Overall Progress</div>
+                            <div class="progress-bar">
+                                <div id="progressBarFill" class="progress-fill"></div>
+                            </div>
+                            <div class="progress-percentage" id="progressPercentage">0%</div>
+                        </div>
+                        <div class="current-city" id="currentCityStatus">
+                            <div class="city-name" id="currentCityName">Getting ready...</div>
+                            <div class="city-step" id="currentCityStep">Initializing analysis</div>
+                        </div>
+                    </div>
+
+                    <div class="detailed-steps">
+                        <div class="step-timeline" id="stepTimeline">
+                            <!-- Steps will be populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div id="progressMessage" class="progress-message">Preparing to start analysis...</div>
+                    <button id="cancelAnalysisBtn" class="btn btn-danger">Cancel Analysis</button>
+                </div>
+            </section>
+
+            <!-- Results Panel -->
+            <section id="resultsPanel" class="results-panel" style="display: none;">
+                <div class="panel-header">
+                    <h2>📈 Analysis Results</h2>
+                    <div class="results-actions">
+                        <button id="exportJsonBtn" class="btn btn-outline">Export JSON</button>
+                        <button id="exportCsvBtn" class="btn btn-outline">Export CSV</button>
+                        <button id="newAnalysisBtn" class="btn btn-secondary">New Analysis</button>
+                    </div>
+                </div>
+
+                <div class="results-summary">
+                    <div class="summary-stats">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalCities">0</div>
+                            <div class="stat-label">Cities Analyzed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="successfulCities">0</div>
+                            <div class="stat-label">Successful</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="averagePrice">$0</div>
+                            <div class="stat-label">Average Price</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalListings">0</div>
+                            <div class="stat-label">Total Listings</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-table-container">
+                    <table id="resultsTable" class="results-table">
+                        <thead>
+                            <tr>
+                                <th>City</th>
+                                <th>Avg Nightly</th>
+                                <th>Avg Monthly</th>
+                                <th>Total Cost</th>
+                                <th>Listings</th>
+                                <th>Price Range</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Results will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>&copy; 2024 Airbnb Price Analyzer - Built with Electron</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
